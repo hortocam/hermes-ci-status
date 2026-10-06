@@ -1,0 +1,2 @@
+# Ignored so a stray local run of the harness never gets committed.
+test/.scratch/

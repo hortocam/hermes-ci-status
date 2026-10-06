@@ -1,0 +1,12 @@
+{
+  "_comment": "Copy to ~/.hermes/ci-status/config.json. Every field is optional; the defaults below are what the collector does with no config file at all. Delete any key you do not need.",
+  "auto_scan": true,
+  "scan_root": "~/projects",
+  "repos": [
+    "/absolute/path/to/a/repo/you/always/want/watched"
+  ],
+  "forges": {
+    "git.example.com": "https://git.example.com"
+  },
+  "tea_config": "~/.config/tea/config.yml"
+}

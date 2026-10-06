@@ -1,0 +1,91 @@
+# The collector is stdlib-only, so this workflow tests it on the oldest Python
+# anyone realistically runs, and the plugin harness on Node 22 (the desktop
+# app's engine floor is ^22.22.0).
+#
+# The plugin harness is self-contained: it stubs the SDK, so it needs no
+# `npm install` and no access to the Hermes source tree.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  collector:
+    name: collector (${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Offline unit checks
+        run: python3 ci_status.py --selftest
+
+      - name: Compile check (no syntax the target would reject)
+        run: python3 -m py_compile ci_status.py
+
+      - name: Runs with no repository in range
+        # An empty watch list must emit a valid, empty document rather than
+        # error — that is what a fresh install looks like.
+        run: |
+          out=$(python3 ci_status.py --json --no-scan --repo /tmp/nonexistent-dir-xyz)
+          echo "$out"
+          python3 - "$out" <<'PY'
+          import json, sys
+          doc = json.loads(sys.argv[1])
+          assert isinstance(doc.get("repos"), list), doc
+          assert doc.get("ghReady") in (True, False), doc
+          print("empty sweep is well-formed")
+          PY
+
+  plugin:
+    name: plugin harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Harness has no dependencies to install
+        # Guards the no-build-step promise: the harness must stay runnable with
+        # nothing but Node, so nobody quietly adds an import that needs npm.
+        run: test ! -f package.json
+
+      - name: Run the plugin harness
+        run: node test/run.mjs
+
+  lint-docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every file the README promises is present
+        run: |
+          for f in plugin.js ci_status.py test/run.mjs test/harness-sdk.mjs examples/config.json; do
+            test -f "$f" || { echo "missing: $f"; exit 1; }
+          done
+
+      - name: The plugin id matches the folder/file contract
+        # The loader keys on `id`, and "Install from Git" derives the folder name
+        # from the repo name — a drift here is a silent no-load.
+        run: |
+          id=$(grep -oE "^const ID = '[^']+'" plugin.js | cut -d"'" -f2)
+          echo "plugin id: $id"
+          test "$id" = "hermes-ci-status"
+
+      - name: No colour is hardcoded in the plugin
+        # The SDK's rule: theme variables only, so the UI repaints with the skin.
+        run: |
+          if grep -nE "(^|[^a-zA-Z-])#[0-9a-fA-F]{3,8}\b|rgb\(|hsl\(" plugin.js; then
+            echo "hardcoded colour in plugin.js"; exit 1
+          fi
