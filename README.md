@@ -228,6 +228,34 @@ test/harness-sdk.mjs      SDK stub + collector fixtures
 examples/config.json      a config you can copy into ~/.hermes/ci-status/
 ```
 
+## Where this shows up (and where it cannot)
+
+The readout renders as a **status-bar chip** next to the model/gateway readouts:
+the focused chat's repo, its branch, a RAG dot and the branch's PR.
+
+**It deliberately does not live in the composer's status deck** (the row that
+already shows the branch, beside the worktree path). That row is core-owned —
+`apps/desktop/src/app/chat/composer/status-stack/coding-row.tsx` — and exposes
+**no contribution slot**, so a plugin cannot put anything inside it. The
+complete list of seams the SDK offers is: `panes`, `statusBar.left/right`,
+`titleBar.left/center/right`, `composer.top/bottom/underside/leading/actions/
+middleware/attachments/microActions/atCompletions/modelPill`, `palette`,
+`routes`, `sidebarNav`, `sidebarProfileGroupHeader`, `workspacePageHeader`,
+`appearance.extra`, `modelMenuRow`, `chatEmpty`, `keybinds`, and
+`sessionRow.leading/trailing`. None of them targets the deck.
+
+Putting it there would mean one of:
+
+1. **`composer.top`** — plugin-only and upgrade-safe, rendering directly below
+   the branch row. Visually a second deck line rather than part of the first.
+2. **Patching `coding-row.tsx`** to add a slot — genuinely in the deck, but
+   `hermes update` runs `git fetch` + `reset --hard` on the source checkout, so
+   the patch is reverted on every upgrade and needs re-applying.
+3. **Upstreaming a slot** so it becomes a supported surface.
+
+Injecting into the deck's DOM was rejected: the SDK's catalog rules forbid DOM
+reach-in, and it would break on the next markup change.
+
 ## Caveats
 
 - **The chip follows the focused session's workspace.** It matches `cwd` against
