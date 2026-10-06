@@ -51,6 +51,38 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 const ID = 'hermes-ci-status'
 const PAGE_PATH = '/ci'
 
+/**
+ * THE column metrics for the CI table — shared by the header and every row, so
+ * the two can never drift apart.
+ *
+ * Why a shared object rather than matching class strings: the header once used
+ * bare inline `<span className='size-*'>` spacers for the two glyph columns, and
+ * `display: inline` ignores width/height, so both collapsed to zero while the
+ * rows' real glyphs (a flex button, an `inline-block` dot) kept their space.
+ * Every label then rendered ~24px left of its own column. Spacers now use
+ * `flex-*` (which is display-independent of the parent's `items-center`), and
+ * the widths live in exactly one place.
+ */
+const COLUMNS = {
+  expander: 'w-4 shrink-0',
+  dot: 'w-1.5 shrink-0',
+  // DEFINITE widths, not `min-w-*`. `shrink-0` implies `flex-basis: auto`, so a
+  // `min-width` cell is still content-sized: one long repo name then grows the
+  // column and shoves every later column right, on that row only. Fixed width +
+  // `truncate` is what keeps every row (and the header) on the same grid.
+  repo: 'w-[11.5rem] shrink-0',
+  branch: 'w-[10rem] shrink-0',
+  checks: 'w-[11rem] shrink-0',
+  pr: 'min-w-0 flex-1',
+  // The forge host is the last, right-most column: a floor width keeps short
+  // hosts ("gitea") from pulling the header label out of alignment with it.
+  forge: 'w-[3.25rem] shrink-0 text-right'
+}
+
+/** The row gap, matched by the header. `gap-2` between columns, and the row
+ *  wraps its PR cell contents in `gap-1.5` internally. */
+const ROW_GAP = 'gap-2'
+
 /** Defaults for the collector invocation. Overridable at runtime through the
  *  page's settings row, because "where is python" on somebody else's machine is
  *  not a thing this plugin can assume. */
@@ -483,14 +515,19 @@ function CiRow({ repo, expanded, onToggle }) {
   return jsxs('div', {
     children: [
       jsxs('div', {
-        className:
-          'group flex items-center gap-2 border-b border-(--ui-stroke-tertiary) px-3 py-1.5 hover:bg-(--chrome-action-hover)',
+        className: cn(
+          'group flex items-center border-b border-(--ui-stroke-tertiary) px-3 py-1.5',
+          'hover:bg-(--ui-row-hover-background)',
+          ROW_GAP
+        ),
         children: [
           jsx('button', {
             'aria-expanded': expanded,
             'aria-label': `${expanded ? 'Collapse' : 'Expand'} ${repo.name}`,
-            className:
-              'flex size-4 shrink-0 items-center justify-center text-(--ui-text-quaternary) hover:text-foreground',
+            className: cn(
+              COLUMNS.expander,
+              'flex items-center justify-center text-(--ui-text-quaternary) hover:text-foreground'
+            ),
             onClick: () => {
               haptic('tap')
               onToggle(repo.path)
@@ -498,19 +535,26 @@ function CiRow({ repo, expanded, onToggle }) {
             type: 'button',
             children: jsx(Codicon, { name: expanded ? 'chevron-down' : 'chevron-right', size: '0.8rem' })
           }),
-          jsx(StatusDot, { tone: style.tone }),
-          jsx('span', { className: 'min-w-[8rem] shrink-0 truncate font-medium', children: repo.name }),
+          // The dot cell carries the shared width too, so a row whose dot is
+          // absent (or a theme where the dot is smaller) still lines up.
+          jsx('span', { className: cn(COLUMNS.dot, 'flex items-center'), children: jsx(StatusDot, { tone: style.tone }) }),
           jsx('span', {
-            className: cn('min-w-[9rem] max-w-[14rem] shrink-0 truncate font-mono text-[0.7rem]', style.colour),
+            className: cn(COLUMNS.repo, 'truncate font-medium'),
+            title: repo.name,
+            children: repo.name
+          }),
+          jsx('span', {
+            className: cn(COLUMNS.branch, 'truncate font-mono text-[0.7rem]', style.colour),
             title: repo.branch,
             children: repo.branch || '(detached)'
           }),
           jsx('span', {
-            className: 'w-[11rem] shrink-0 truncate text-[0.7rem] text-(--ui-text-tertiary)',
+            className: cn(COLUMNS.checks, 'truncate text-[0.7rem] text-(--ui-text-tertiary)'),
+            title: countsLabel(branch || repo),
             children: countsLabel(branch || repo)
           }),
           jsxs('span', {
-            className: 'flex min-w-0 flex-1 items-center gap-1.5',
+            className: cn(COLUMNS.pr, 'flex items-center gap-1.5'),
             children: [
               pr
                 ? jsx(PrChip, { pr })
@@ -524,7 +568,10 @@ function CiRow({ repo, expanded, onToggle }) {
               drifted ? jsx(Badge, { size: 'xs', variant: 'outline', children: 'sha drift' }) : null
             ]
           }),
-          jsx('span', { className: 'shrink-0 text-[0.65rem] text-(--ui-text-quaternary)', children: repo.host }),
+          jsx('span', {
+            className: cn(COLUMNS.forge, 'text-[0.65rem] text-(--ui-text-quaternary)'),
+            children: repo.host
+          }),
           jsxs('span', {
             className:
               'flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
@@ -707,19 +754,27 @@ function CiPage() {
                           'shrink-0 border-b border-(--ui-stroke-tertiary) px-3 py-1 text-[0.65rem] text-(--ui-text-quaternary)',
                         children: t('noWorkspaceMatch')
                       }),
-                  // Column header, so the two free-text columns cannot be
-                  // mistaken for one another.
+                  // Column header. It shares COLUMNS with every row, so the
+                  // labels cannot drift off their columns, and it carries its
+                  // own surface + rule so it reads as a header rather than as
+                  // one more (bold) row.
                   jsxs('div', {
-                    className:
-                      'flex shrink-0 items-center gap-2 border-b border-(--ui-stroke-tertiary) px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--ui-text-quaternary)',
+                    className: cn(
+                      'flex shrink-0 items-center border-b border-(--ui-stroke-secondary) bg-(--ui-bg-secondary)',
+                      'px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-wider text-(--ui-text-tertiary)',
+                      ROW_GAP
+                    ),
                     children: [
-                      jsx('span', { className: 'size-4 shrink-0' }),
-                      jsx('span', { className: 'size-1.5 shrink-0' }),
-                      jsx('span', { className: 'min-w-[8rem] shrink-0', children: t('colRepo') }),
-                      jsx('span', { className: 'min-w-[9rem] shrink-0', children: t('colBranch') }),
-                      jsx('span', { className: 'w-[11rem] shrink-0', children: t('colChecks') }),
-                      jsx('span', { className: 'min-w-0 flex-1', children: t('colPr') }),
-                      jsx('span', { className: 'shrink-0', children: t('colForge') })
+                      // Spacers are `flex-*`, not inline `size-*`: an inline box
+                      // ignores width/height entirely, which is what used to
+                      // collapse them to zero and shift every label left.
+                      jsx('span', { className: COLUMNS.expander, 'aria-hidden': 'true' }),
+                      jsx('span', { className: COLUMNS.dot, 'aria-hidden': 'true' }),
+                      jsx('span', { className: COLUMNS.repo, children: t('colRepo') }),
+                      jsx('span', { className: COLUMNS.branch, children: t('colBranch') }),
+                      jsx('span', { className: COLUMNS.checks, children: t('colChecks') }),
+                      jsx('span', { className: COLUMNS.pr, children: t('colPr') }),
+                      jsx('span', { className: COLUMNS.forge, children: t('colForge') })
                     ]
                   }),
                   jsx('div', {

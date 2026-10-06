@@ -276,6 +276,79 @@ assert.match(control.calls.shellExec[0], /understudy/, 'the detail call names th
 
 control.requestOverride = null
 
+// ── column alignment: the regression the harness used to miss ────────────────
+
+// The harness proved the plugin *renders*; it did not prove the header lines up
+// with the rows. It now does: extract the ordered width tokens from the header's
+// cells and from a row's cells and require them to agree. This is the assertion
+// that would have caught the original bug, where the header's two glyph spacers
+// were inline `size-*` boxes (zero-width, since `display: inline` ignores
+// width/height) while the rows' real glyphs kept their space — shifting every
+// label ~24px left of its own column.
+
+/** Width-bearing classes: the ones that decide where a column starts. */
+function widthTokens(className) {
+  return String(className || '')
+    .split(/\s+/)
+    .filter(t => /^-?(w|min-w|max-w|flex-1|basis)-?/.test(t))
+    .sort()
+    .join(' ')
+}
+
+/** Direct children elements of a node's `children`. */
+function childElements(node) {
+  const kids = node && node.props && node.props.children
+  const list = Array.isArray(kids) ? kids : kids ? [kids] : []
+  return list.filter(n => n && typeof n === 'object' && n.__type !== undefined)
+}
+
+control.queryResult = { data: SWEEP, error: null, isError: false, isFetching: false, isLoading: false, refetch: () => {} }
+control.setCwd('/tmp/nowhere') // so the header renders without the fallback banner
+nodes(route.render())
+control.setCwd('/home/hermes/projects/understudy')
+
+// The header is the flex container holding the 'Repository' label.
+const headerEl = seenElements.find(
+  n => childElements(n).some(c => c.props && c.props.children === 'Repository')
+)
+assert.ok(headerEl, 'found the column header')
+
+const rowElForAlign = findRow('understudy')
+assert.ok(rowElForAlign, 'found a row to compare against')
+const rowTree = rowElForAlign.__type(rowElForAlign.props)
+const rowContainer = childElements(rowTree)[0]
+assert.ok(rowContainer, 'the row renders a container')
+
+const headerCells = childElements(headerEl)
+const rowCells = childElements(rowContainer)
+assert.equal(headerCells.length, 7, 'the header has one cell per column')
+assert.ok(rowCells.length >= 7, 'the row has at least one cell per column')
+
+for (let i = 0; i < headerCells.length; i++) {
+  const h = widthTokens(headerCells[i].props.className)
+  const r = widthTokens(rowCells[i].props.className)
+  assert.equal(
+    h,
+    r,
+    `column ${i} ('${headerCells[i].props.children}') header [${h}] must match row [${r}]`
+  )
+}
+
+// And no cell may lean on a bare `size-*`: that is an inline box, so it has no
+// width at all and silently collapses. This is the exact shape of the old bug.
+for (const [label, cells] of [['header', headerCells], ['row', rowCells]]) {
+  for (const cell of cells) {
+    const cls = String(cell.props.className || '')
+    if (/\bsize-\S+/.test(cls)) {
+      assert.match(
+        cls,
+        /\b(flex|grid|inline-block|block)\b/,
+        `${label} cell uses a bare \`size-*\` without a display class: "${cls}"`
+      )
+    }
+  }
+}
+
 // ── render-tree helpers ──────────────────────────────────────────────────────
 
 function nodes(node, out = []) {
