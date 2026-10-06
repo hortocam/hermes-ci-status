@@ -75,11 +75,26 @@ assert.equal(plugin.name, 'CI Status', 'plugin has a human name')
 assert.equal(typeof plugin.register, 'function', 'register() is a function')
 
 const contributions = []
+/** Gateway-event listeners the plugin registered, by event type. */
+const eventListeners = new Map()
+/** Dispatch an event exactly as the app's gateway would. */
+function emitGatewayEvent(type, event) {
+  for (const fn of eventListeners.get(type) || []) {
+    fn(event)
+  }
+}
+
 plugin.register({
   // `ctx.i18n.register` takes the bundles WITHOUT the plugin id — the host
   // namespaces them — so the harness supplies that keying itself.
   i18n: { register: bundles => Object.assign(control.i18nBundle, { 'hermes-ci-status': bundles }) },
   onDispose: () => {},
+  onEvent: (type, fn) => {
+    const set = eventListeners.get(type) || new Set()
+    set.add(fn)
+    eventListeners.set(type, set)
+    return () => set.delete(fn)
+  },
   register: contribution => contributions.push(contribution),
   registerMany: list => list.forEach(c => contributions.push(c)),
   storage: { get: () => '', set: () => {} }
@@ -132,6 +147,42 @@ const chipTip = find(chipTree, 'Tip')
 assert.ok(chipTip, 'the chip is wrapped in a Tip')
 assert.match(String(chipTip.props.label), /Running/, 'tooltip states the RAG verdict')
 assert.match(String(chipTip.props.label), /understudy · wt\/slice-2-handoff/, 'tooltip carries repo + branch')
+
+// The chip must FOLLOW the focused session. Regression: reading only
+// `host.state.cwd` produced a chip that looked frozen — the app deliberately
+// leaves that atom on the previous conversation's folder when a row has no
+// recorded cwd, so the chip kept describing the session you had just left.
+// The fix resolves the focused session's own workspace from `session.info`.
+control.setFocusedSession('sess-understudy')
+emitGatewayEvent('session.info', {
+  payload: { cwd: '/home/hermes/projects/understudy' },
+  session_id: 'sess-understudy',
+  type: 'session.info'
+})
+control.setFocusedSession('sess-soundscape')
+emitGatewayEvent('session.info', {
+  payload: { cwd: '/home/hermes/projects/soundscape-factory' },
+  session_id: 'sess-soundscape',
+  type: 'session.info'
+})
+// The app's shared cwd atom still points at the session we LEFT — the exact
+// state that used to freeze the chip.
+control.setCwd('/home/hermes/projects/understudy')
+
+control.setFocusedSession('sess-soundscape')
+assert.match(text(nodes(chip.render())), /soundscape-factory/, 'chip follows the focused session to soundscape-factory')
+
+control.setFocusedSession('sess-understudy')
+assert.match(text(nodes(chip.render())), /understudy/, 'chip follows the focused session back to understudy')
+
+// A session the plugin has not heard from must fall back to the app's cwd
+// rather than keep the last one it knew.
+control.setFocusedSession('sess-unknown')
+const unknownTree = text(nodes(chip.render()))
+assert.match(unknownTree, /understudy/, 'an unheard-of session falls back to the app cwd atom')
+
+control.setFocusedSession(null)
+control.setCwd('/home/hermes/projects/understudy')
 
 // A workspace on no watched repo falls back to the most urgent, and says so.
 control.setCwd('/tmp/nowhere')
@@ -321,8 +372,12 @@ assert.ok(rowContainer, 'the row renders a container')
 
 const headerCells = childElements(headerEl)
 const rowCells = childElements(rowContainer)
-assert.equal(headerCells.length, 7, 'the header has one cell per column')
-assert.ok(rowCells.length >= 7, 'the row has at least one cell per column')
+// Eight cells each, and — the point of this assertion — the SAME eight. The row
+// once carried one cell more than the header (the hover-revealed remote
+// buttons), which left its forge text ~55px short of the right edge while the
+// header's label sat flush against it.
+assert.equal(headerCells.length, rowCells.length, 'header and row must have the same number of cells')
+assert.equal(headerCells.length, 8, 'eight columns: expander, dot, repo, branch, checks, PR, remotes, actions')
 
 // 1. Header and row must agree, column for column, on the geometry that decides
 //    where a column starts.

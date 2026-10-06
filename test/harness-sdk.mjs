@@ -132,10 +132,14 @@ export const control = {
   /** Move the focused workspace the chip resolves against. */
   setCwd: value => {
     atomState.cwd = value
+  },
+  /** Move the FOCUSED chat (its runtime session id). */
+  setFocusedSession: value => {
+    atomState.focusedSessionId = value
   }
 }
 
-const atomState = { cwd: '/home/hermes/projects/understudy' }
+const atomState = { cwd: '/home/hermes/projects/understudy', focusedSessionId: 'sess-understudy' }
 
 export const shellResult = command =>
   command.includes('--repo')
@@ -170,7 +174,11 @@ export const host = {
     }
     return shellResult(params.command)
   },
-  state: { cwd: atom(() => atomState.cwd), gateway: atom(() => 'open') }
+  state: {
+    cwd: atom(() => atomState.cwd),
+    focusedSessionId: atom(() => atomState.focusedSessionId),
+    gateway: atom(() => 'open')
+  }
 }
 
 export const usePluginI18n = id => (key, ...args) => {

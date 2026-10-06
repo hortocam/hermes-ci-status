@@ -79,7 +79,14 @@ const COLUMNS = {
   branch: { style: { flex: 'none', width: '10rem' } },
   checks: { style: { flex: 'none', width: '11rem' } },
   pr: { style: { flex: '1 1 0%', minWidth: 0 } },
-  forge: { style: { flex: 'none', width: '3.25rem', textAlign: 'right' } }
+  // The forge host, right-aligned because it is the last TEXT column — the
+  // label sits flush right with the values beneath it.
+  forge: { style: { flex: 'none', width: '3.25rem', textAlign: 'right' } },
+  // The hover-revealed remote buttons own their own column. Without this the
+  // row carried one more cell than the header, so the row's forge text ended
+  // ~55px short of the right edge while the header's label sat flush against
+  // it — the misalignment this column exists to fix.
+  actions: { style: { flex: 'none', width: '4.5rem' } }
 }
 
 /** A COLUMNS entry merged with extra classes — the one way to apply a column. */
@@ -206,6 +213,24 @@ async function runCollector(extra) {
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Live ``cwd`` per RUNTIME session id, fed by the gateway's ``session.info``
+ * event — the same signal the app itself uses to settle a conversation's
+ * workspace after a switch.
+ *
+ * Why not just ``host.state.cwd``: the app deliberately LEAVES that atom holding
+ * the previous conversation's folder when a session row has no recorded cwd (its
+ * own comment: "the path is deliberately left in place"), then corrects it from
+ * this event a beat later. It is the app's workspace for the pane, not a
+ * per-session fact, so reading it alone gave a chip that looked frozen — it kept
+ * describing the session you had just left.
+ *
+ * Keyed by session id rather than a single "focused" value on purpose: a
+ * background session emits the same event, and a bare assignment would let one
+ * hijack the chip while you looked elsewhere.
+ */
+const $cwdBySession = atom({})
 
 /** Repo rows worth a glance: skip the ones with no forge at all. */
 const visibleRepos = doc => ((doc && doc.repos) || []).filter(r => !r.skipped)
@@ -349,8 +374,14 @@ function PrChip({ pr, showNumber = true }) {
  */
 function CiChip() {
   const t = usePluginI18n(ID)
-  const cwd = useValue(host.state.cwd)
+  const focusedId = useValue(host.state.focusedSessionId)
+  const cwdBySession = useValue($cwdBySession)
+  const liveCwd = useValue(host.state.cwd)
   const generation = useValue($generation)
+
+  // The focused chat's OWN workspace when we have heard it, else the app's live
+  // workspace (correct on first load, before any session.info has arrived).
+  const cwd = (focusedId && cwdBySession[focusedId]) || liveCwd
 
   const query = useQuery({
     queryKey: [ID, 'sweep', generation],
@@ -585,8 +616,10 @@ function CiRow({ repo, expanded, onToggle }) {
             children: repo.host
           }),
           jsxs('span', {
-            className:
-              'flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+            ...colProps(
+              'actions',
+              'flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100'
+            ),
             children: [
               jsx(LinkIcon, {
                 icon: 'git-pull-request',
@@ -786,7 +819,10 @@ function CiPage() {
                       jsx('span', { ...colProps('branch'), children: t('colBranch') }),
                       jsx('span', { ...colProps('checks'), children: t('colChecks') }),
                       jsx('span', { ...colProps('pr'), children: t('colPr') }),
-                      jsx('span', { ...colProps('forge'), children: t('colForge') })
+                      // "Remotes", not "Forge": the column holds host names
+                      // (github / gitea), and "Forge" reads as a button label.
+                      jsx('span', { ...colProps('forge'), children: t('colRemotes') }),
+                      jsx('span', { ...colProps('actions'), 'aria-hidden': 'true' })
                     ]
                   }),
                   jsx('div', {
@@ -850,6 +886,18 @@ export default {
     pluginCtx = ctx
     loadStoredCommand(ctx)
 
+    // Record each session's live workspace as the gateway reports it. This is
+    // what lets the chip follow you between sessions: on a switch, the app
+    // repoints its own cwd atom and the gateway emits this event for the session
+    // you landed on.
+    ctx.onEvent('session.info', event => {
+      const sid = event && event.session_id
+      const cwd = event && event.payload && event.payload.cwd
+      if (sid && typeof cwd === 'string' && cwd) {
+        $cwdBySession.set({ ...$cwdBySession.get(), [sid]: cwd })
+      }
+    })
+
     ctx.i18n.register({
       en: {
         pageTitle: 'CI status',
@@ -865,7 +913,7 @@ export default {
         colBranch: 'Branch',
         colChecks: 'Checks',
         colPr: 'Pull request',
-        colForge: 'Forge',
+        colRemotes: 'Remotes',
         notWatched: 'Checked out but not watched',
         noWorkspaceMatch:
           'This chat\'s workspace is not one of the watched repositories — showing every repo instead.',
