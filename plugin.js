@@ -55,29 +55,38 @@ const PAGE_PATH = '/ci'
  * THE column metrics for the CI table — shared by the header and every row, so
  * the two can never drift apart.
  *
- * Why a shared object rather than matching class strings: the header once used
- * bare inline `<span className='size-*'>` spacers for the two glyph columns, and
- * `display: inline` ignores width/height, so both collapsed to zero while the
- * rows' real glyphs (a flex button, an `inline-block` dot) kept their space.
- * Every label then rendered ~24px left of its own column. Spacers now use
- * `flex-*` (which is display-independent of the parent's `items-center`), and
- * the widths live in exactly one place.
+ * GEOMETRY IS INLINE, NOT TAILWIND — this is load-bearing, do not "tidy" it
+ * back into classes. A disk plugin lives outside the app's project tree, and
+ * the desktop builds its stylesheet with Tailwind v4, which emits a rule only
+ * for classes it finds while scanning source. It never scans
+ * `$HERMES_HOME/desktop-plugins/`, so from a plugin's point of view:
+ *
+ *   - arbitrary-value utilities (`w-[11.5rem]`) have NO RULE AT ALL — they
+ *     silently do nothing, which is why the first version of this table had a
+ *     header whose labels bunched at ~50px while the data spread the full width;
+ *   - only classes CORE also uses (the `text-[0.7rem]` scale, `flex-1`,
+ *     `min-w-0`, `truncate`, `gap-2`, …) have real CSS and are safe.
+ *
+ * Widths are geometry, so they ride on inline styles, which no build step can
+ * drop. Each entry is `{ className?, style? }`; use `colProps()` to apply one.
  */
 const COLUMNS = {
-  expander: 'w-4 shrink-0',
-  dot: 'w-1.5 shrink-0',
-  // DEFINITE widths, not `min-w-*`. `shrink-0` implies `flex-basis: auto`, so a
-  // `min-width` cell is still content-sized: one long repo name then grows the
-  // column and shoves every later column right, on that row only. Fixed width +
-  // `truncate` is what keeps every row (and the header) on the same grid.
-  repo: 'w-[11.5rem] shrink-0',
-  branch: 'w-[10rem] shrink-0',
-  checks: 'w-[11rem] shrink-0',
-  pr: 'min-w-0 flex-1',
-  // The forge host is the last, right-most column: a floor width keeps short
-  // hosts ("gitea") from pulling the header label out of alignment with it.
-  forge: 'w-[3.25rem] shrink-0 text-right'
+  expander: { style: { flex: 'none', width: '1rem' } },
+  dot: { style: { flex: 'none', width: '0.375rem' } },
+  // Definite widths, and on the CELL rather than the content: a cell sized by
+  // its content lets one long repo name shove that row's later columns right.
+  repo: { style: { flex: 'none', width: '11.5rem' } },
+  branch: { style: { flex: 'none', width: '10rem' } },
+  checks: { style: { flex: 'none', width: '11rem' } },
+  pr: { style: { flex: '1 1 0%', minWidth: 0 } },
+  forge: { style: { flex: 'none', width: '3.25rem', textAlign: 'right' } }
 }
+
+/** A COLUMNS entry merged with extra classes — the one way to apply a column. */
+const colProps = (key, extraClass) => ({
+  className: cn(COLUMNS[key].className, extraClass),
+  style: COLUMNS[key].style
+})
 
 /** The row gap, matched by the header. `gap-2` between columns, and the row
  *  wraps its PR cell contents in `gap-1.5` internally. */
@@ -522,12 +531,12 @@ function CiRow({ repo, expanded, onToggle }) {
         ),
         children: [
           jsx('button', {
-            'aria-expanded': expanded,
-            'aria-label': `${expanded ? 'Collapse' : 'Expand'} ${repo.name}`,
-            className: cn(
-              COLUMNS.expander,
+            ...colProps(
+              'expander',
               'flex items-center justify-center text-(--ui-text-quaternary) hover:text-foreground'
             ),
+            'aria-expanded': expanded,
+            'aria-label': `${expanded ? 'Collapse' : 'Expand'} ${repo.name}`,
             onClick: () => {
               haptic('tap')
               onToggle(repo.path)
@@ -537,24 +546,27 @@ function CiRow({ repo, expanded, onToggle }) {
           }),
           // The dot cell carries the shared width too, so a row whose dot is
           // absent (or a theme where the dot is smaller) still lines up.
-          jsx('span', { className: cn(COLUMNS.dot, 'flex items-center'), children: jsx(StatusDot, { tone: style.tone }) }),
           jsx('span', {
-            className: cn(COLUMNS.repo, 'truncate font-medium'),
+            ...colProps('dot', 'flex items-center'),
+            children: jsx(StatusDot, { tone: style.tone })
+          }),
+          jsx('span', {
+            ...colProps('repo', 'truncate font-medium'),
             title: repo.name,
             children: repo.name
           }),
           jsx('span', {
-            className: cn(COLUMNS.branch, 'truncate font-mono text-[0.7rem]', style.colour),
+            ...colProps('branch', cn('truncate font-mono text-[0.7rem]', style.colour)),
             title: repo.branch,
             children: repo.branch || '(detached)'
           }),
           jsx('span', {
-            className: cn(COLUMNS.checks, 'truncate text-[0.7rem] text-(--ui-text-tertiary)'),
+            ...colProps('checks', 'truncate text-[0.7rem] text-(--ui-text-tertiary)'),
             title: countsLabel(branch || repo),
             children: countsLabel(branch || repo)
           }),
           jsxs('span', {
-            className: cn(COLUMNS.pr, 'flex items-center gap-1.5'),
+            ...colProps('pr', 'flex items-center gap-1.5'),
             children: [
               pr
                 ? jsx(PrChip, { pr })
@@ -569,7 +581,7 @@ function CiRow({ repo, expanded, onToggle }) {
             ]
           }),
           jsx('span', {
-            className: cn(COLUMNS.forge, 'text-[0.65rem] text-(--ui-text-quaternary)'),
+            ...colProps('forge', 'text-[0.65rem] text-(--ui-text-quaternary)'),
             children: repo.host
           }),
           jsxs('span', {
@@ -768,13 +780,13 @@ function CiPage() {
                       // Spacers are `flex-*`, not inline `size-*`: an inline box
                       // ignores width/height entirely, which is what used to
                       // collapse them to zero and shift every label left.
-                      jsx('span', { className: COLUMNS.expander, 'aria-hidden': 'true' }),
-                      jsx('span', { className: COLUMNS.dot, 'aria-hidden': 'true' }),
-                      jsx('span', { className: COLUMNS.repo, children: t('colRepo') }),
-                      jsx('span', { className: COLUMNS.branch, children: t('colBranch') }),
-                      jsx('span', { className: COLUMNS.checks, children: t('colChecks') }),
-                      jsx('span', { className: COLUMNS.pr, children: t('colPr') }),
-                      jsx('span', { className: COLUMNS.forge, children: t('colForge') })
+                      jsx('span', { ...colProps('expander'), 'aria-hidden': 'true' }),
+                      jsx('span', { ...colProps('dot'), 'aria-hidden': 'true' }),
+                      jsx('span', { ...colProps('repo'), children: t('colRepo') }),
+                      jsx('span', { ...colProps('branch'), children: t('colBranch') }),
+                      jsx('span', { ...colProps('checks'), children: t('colChecks') }),
+                      jsx('span', { ...colProps('pr'), children: t('colPr') }),
+                      jsx('span', { ...colProps('forge'), children: t('colForge') })
                     ]
                   }),
                   jsx('div', {

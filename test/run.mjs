@@ -278,20 +278,22 @@ control.requestOverride = null
 
 // ── column alignment: the regression the harness used to miss ────────────────
 
-// The harness proved the plugin *renders*; it did not prove the header lines up
-// with the rows. It now does: extract the ordered width tokens from the header's
-// cells and from a row's cells and require them to agree. This is the assertion
-// that would have caught the original bug, where the header's two glyph spacers
-// were inline `size-*` boxes (zero-width, since `display: inline` ignores
-// width/height) while the rows' real glyphs kept their space — shifting every
-// label ~24px left of its own column.
+// Two earlier versions of this table shipped broken, and the harness passed
+// both times — because it only asked whether the plugin RENDERED, never where
+// anything ended up. It now checks the geometry contract directly.
+//
+// The failure mode worth internalising: a disk plugin lives outside the app's
+// project tree, and the desktop's Tailwind v4 build emits a rule only for
+// classes it finds while scanning source. It never scans desktop-plugins/, so
+// arbitrary-value utilities (w-[11.5rem]) have NO RULE AT ALL and silently do
+// nothing. Column widths must therefore ride on inline styles.
 
-/** Width-bearing classes: the ones that decide where a column starts. */
-function widthTokens(className) {
-  return String(className || '')
-    .split(/\s+/)
-    .filter(t => /^-?(w|min-w|max-w|flex-1|basis)-?/.test(t))
+/** Flatten a `style` prop ({marginTop: 4}) into a comparable "k:v" string. */
+function styleTokens(style) {
+  const obj = style || {}
+  return Object.keys(obj)
     .sort()
+    .map(k => `${k}:${String(obj[k]).replace(/\s+/g, '')}`)
     .join(' ')
 }
 
@@ -307,7 +309,6 @@ control.setCwd('/tmp/nowhere') // so the header renders without the fallback ban
 nodes(route.render())
 control.setCwd('/home/hermes/projects/understudy')
 
-// The header is the flex container holding the 'Repository' label.
 const headerEl = seenElements.find(
   n => childElements(n).some(c => c.props && c.props.children === 'Repository')
 )
@@ -315,8 +316,7 @@ assert.ok(headerEl, 'found the column header')
 
 const rowElForAlign = findRow('understudy')
 assert.ok(rowElForAlign, 'found a row to compare against')
-const rowTree = rowElForAlign.__type(rowElForAlign.props)
-const rowContainer = childElements(rowTree)[0]
+const rowContainer = childElements(rowElForAlign.__type(rowElForAlign.props))[0]
 assert.ok(rowContainer, 'the row renders a container')
 
 const headerCells = childElements(headerEl)
@@ -324,28 +324,70 @@ const rowCells = childElements(rowContainer)
 assert.equal(headerCells.length, 7, 'the header has one cell per column')
 assert.ok(rowCells.length >= 7, 'the row has at least one cell per column')
 
+// 1. Header and row must agree, column for column, on the geometry that decides
+//    where a column starts.
 for (let i = 0; i < headerCells.length; i++) {
-  const h = widthTokens(headerCells[i].props.className)
-  const r = widthTokens(rowCells[i].props.className)
-  assert.equal(
-    h,
-    r,
-    `column ${i} ('${headerCells[i].props.children}') header [${h}] must match row [${r}]`
-  )
+  const h = styleTokens(headerCells[i].props.style)
+  const r = styleTokens(rowCells[i].props.style)
+  assert.equal(h, r, `column ${i} ('${headerCells[i].props.children}') header [${h}] must match row [${r}]`)
 }
 
-// And no cell may lean on a bare `size-*`: that is an inline box, so it has no
-// width at all and silently collapses. This is the exact shape of the old bug.
-for (const [label, cells] of [['header', headerCells], ['row', rowCells]]) {
+// 2. Every geometry-bearing token must be an inline style. A width expressed as
+//    a Tailwind class would be silently dropped by the app's CSS build, which is
+//    exactly how the header ended up with ~50px bunched labels.
+const GEOMETRY_CLASS = /^(w|min-w|max-w|basis|flex|grow|shrink)-/
+for (const [where, cells] of [['header', headerCells], ['row', rowCells]]) {
+  for (const cell of cells) {
+    const bad = String(cell.props.className || '')
+      .split(/\s+/)
+      .filter(t => GEOMETRY_CLASS.test(t) && !/^shrink-0$/.test(t))
+    assert.equal(
+      bad.length,
+      0,
+      `${where} cell carries geometry as a class (${bad.join(' ')}), which the app's ` +
+        `CSS build will not generate for a disk plugin — use an inline style`
+    )
+  }
+}
+
+// 3. No arbitrary-value class in the GEOMETRY namespace, on any cell.
+//
+//    The distinction matters and is not arbitrary: an arbitrary value only gets
+//    a CSS rule if some file the build scans uses that exact string. Core uses
+//    the `text-[0.7rem]` scale in dozens of files, so those classes resolve;
+//    core has never written `w-[11.5rem]`, so that class has no rule at all and
+//    the cell falls back to content-sizing — which is how the header ended up
+//    with its labels bunched at ~50px while the data spread the full width.
+//
+//    Geometry therefore rides on inline styles; typography may stay a class.
+const GEOMETRY_ARBITRARY =
+  /(?:^|\s)(?:w|min-w|max-w|h|min-h|max-h|size|basis|grow|shrink|inset|top|right|bottom|left|gap|gap-x|gap-y|space-x|space-y|p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr)-\[[^\]]+\]/
+for (const [where, cells] of [['header', headerCells], ['row', rowCells]]) {
   for (const cell of cells) {
     const cls = String(cell.props.className || '')
+    assert.ok(
+      !GEOMETRY_ARBITRARY.test(cls),
+      `${where} cell sizes itself with a class the app's CSS build will never generate for a ` +
+        `disk plugin — move this to an inline style: "${cls}"`
+    )
+    // A bare `size-*` is worse still: `display: inline` ignores width/height, so
+    // it collapses to zero entirely.
     if (/\bsize-\S+/.test(cls)) {
-      assert.match(
-        cls,
-        /\b(flex|grid|inline-block|block)\b/,
-        `${label} cell uses a bare \`size-*\` without a display class: "${cls}"`
-      )
+      assert.match(cls, /\b(flex|grid|inline-block|block)\b/, `${where} cell: bare \`size-*\` with no display class`)
     }
+  }
+}
+
+// 4. A cell that carries text must be able to clip it — a definite width only
+//    holds if the content cannot grow the box. Clipping may come from the class
+//    (`truncate`) or from the inline style (`textAlign: right` for the trailing
+//    forge column), so accept either.
+for (const cell of rowCells) {
+  const text = cell.props.children
+  if (typeof text === 'string' && text.length > 0) {
+    const viaClass = /truncate/.test(String(cell.props.className || ''))
+    const viaStyle = Boolean(cell.props.style && cell.props.style.textAlign)
+    assert.ok(viaClass || viaStyle, `text cell "${text}" must truncate or right-align`)
   }
 }
 

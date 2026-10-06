@@ -171,6 +171,32 @@ per plugin.
 A repo with no `origin` remote is reported as **skipped**, not failed — a scratch
 checkout is not a broken pipeline.
 
+## A note for anyone extending this
+
+**Column widths are inline styles, not Tailwind classes — this is deliberate, and
+copying the usual "just use a class" instinct here will break the table.**
+
+The desktop builds its stylesheet with Tailwind v4, which emits a rule only for
+classes it finds while scanning source. A disk plugin lives *outside* the app's
+project tree (`$HERMES_HOME/desktop-plugins/`), and the build never scans it. So
+from inside a plugin:
+
+- **Arbitrary-value geometry has no rule at all.** `w-[11.5rem]` compiles to
+  nothing, and the element silently falls back to content-sizing. This is how an
+  early version of this table ended up with a header whose labels bunched at
+  ~50px while the data spread the full width.
+- **Only classes core already uses are safe** — the `text-[0.7rem]` scale,
+  `flex-1`, `min-w-0`, `truncate`, `gap-2`, `shrink-0`, and so on. Core uses those
+  in dozens of files, so their rules exist in the shipped stylesheet.
+- **A bare `size-*` is worse still**: it is an inline box, and `display: inline`
+  ignores width/height, so it collapses to zero.
+
+Geometry therefore rides on inline styles (`COLUMNS`, near the top of
+`plugin.js`), which no build step can drop. Typography and layout verbs stay
+classes. `test/run.mjs` enforces the split: it fails if a cell sizes itself with
+a class in the geometry namespace, and if a header and row disagree about a
+column. Both rules are verified to fail against the bugs they were written for.
+
 ## Development
 
 No build step, no `npm install`, no dependencies. The plugin is plain ESM that
