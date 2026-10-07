@@ -59,6 +59,16 @@ criterion was reviewed and satisfied *as a requirement*, not that implementation
       collapsed into a boolean or an empty string) has **not** been surveyed. This feature fixes the one
       that was observed; a systematic sweep of the document's error states would be its own slice.
 
+## Post-implementation confirmation
+
+- [x] CHK022 Negative controls executed, not merely written: restoring the boolean fold fails the
+      tri-state assertion; restoring `bool(...)` in the projection fails the preservation assertion;
+      making the badge fire on `null` fails; making drift never fire fails the positive control.
+- [x] CHK023 The control run found a **gap in the assertions** (not in the code): the chip's own drift
+      indicator was unverified because `PrChip`'s icon satisfied a generic check. Now asserted by its
+      tooltip sentence, and recorded as `001` T049.
+- [x] CHK024 `001`'s FR-007, the PR entity and a new Edge Case are corrected in the same change.
+
 ## Notes
 
 - CHK020–CHK021 are deliberately unchecked. CHK021 in particular is the honest admission that this is a

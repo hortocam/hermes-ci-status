@@ -81,6 +81,22 @@ harness gaps** that form the next slice.
 - [x] T041 [P] Assertions: truncated payload explained; collector exit error surfaced
 - [x] T042 [P] Assertions verified to **fail against their bug** (the three historical defects)
 
+## Defect cycle 5 (fixed by `003-absent-branch`)
+
+- [x] T047 [US1] **Requirement fix, not a code fix** — FR-007 was *incomplete*: it required drift to be
+      reported and said nothing about a local head that cannot be resolved, so the code folded that case
+      to `false` and reported a **merged** PR as drifting. `headMatches` is now a tri-state and the
+      comparison is reported as unknown when it cannot be made.
+- [x] T048 [US1] `--selftest` covers the tri-state (all three reachable and distinct) and asserts the
+      compact projection preserves it — the projection is where the value was destroyed in transit.
+- [x] T049 [US1] The chip's **own** drift indicator is now asserted separately from `PrChip`'s: killing
+      the chip's line alone previously left the suite green, because the PR chip's icon satisfied a
+      generic icon check.
+
+*Why this is recorded here rather than only in `003`:* `001`'s FR-007 is the requirement that was
+incomplete, so the correction belongs beside it. Five cycles now — three coding defects
+(T024, T030/T031, T034), one wrong **requirement** (T023), one incomplete requirement (T047).
+
 ## Phase 7: Open gaps → next slice
 
 - [ ] T043 [P] Negative-controlled test: compact row-shedding actually sheds and sets `omitted`

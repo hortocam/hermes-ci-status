@@ -347,6 +347,88 @@ assert.match(control.calls.shellExec[0], /understudy/, 'the detail call names th
 
 control.requestOverride = null
 
+// ── absent upstream: a merged-and-deleted branch must not read as drift ──────
+
+// Reproduced from the field: the chip showed a sha-drift badge on a branch whose
+// PR had just MERGED, because GitHub deletes the head branch on merge and the
+// collector resolved the branch's commit by name — an empty local head then
+// folded to `false`, i.e. "drifted". Two things must hold: the collector reports
+// UNKNOWN, and the compact projection preserves that (a collector-only fix would
+// pass every collector test and still be broken on the chip).
+
+const ABSENT_SWEEP = {
+  errors: [],
+  generatedAt: 1791230400,
+  ghReady: true,
+  repos: [
+    {
+      branch: '002-impl',
+      // The upstream ref is gone; the local branch survives.
+      branches: {
+        '002-impl': { checkState: 'none', n: {}, ok: true, pr: null }
+      },
+      error: null,
+      hasCi: true,
+      host: 'github',
+      name: 'hermes-ci-plugin-gone',
+      path: '/home/hermes/projects/hermes-ci-plugin',
+      pr: {
+        draft: false,
+        headMatches: null, // UNKNOWN — no comparison was possible
+        mergeable: 'UNKNOWN',
+        n: 4,
+        review: '',
+        state: 'merged',
+        title: 'fix(chip): abstain when no repo matches the workspace',
+        url: 'https://github.com/hortocam/hermes-ci-status/pull/4'
+      },
+      skipped: false,
+      slug: 'hortocam/hermes-ci-status',
+      state: 'none',
+      url: 'https://github.com/hortocam/hermes-ci-status'
+    }
+  ]
+}
+
+control.queryResult = { data: ABSENT_SWEEP, error: null, isError: false, isFetching: false, isLoading: false, refetch: () => {} }
+control.setCwd('/home/hermes/projects/hermes-ci-plugin')
+const absentTree = chip.render()
+const absentText = text(absentTree)
+
+// No drift indicator, in any form the chip uses to say it.
+assert.ok(!/drift/i.test(absentText), `absent-upstream chip must not say "drift": ${absentText}`)
+const absentIcons = nodes(absentTree)
+  .filter(n => n.__type === 'Codicon')
+  .map(n => String(n.props.name))
+assert.ok(
+  !absentIcons.includes('warning'),
+  `absent-upstream chip must not render the warning icon: ${absentIcons.join(', ')}`
+)
+// The PR itself is still surfaced — the user should see it merged.
+assert.match(absentText, /#4/, 'the merged PR is still shown')
+// And a genuinely drifted PR still warns (positive control, so this cannot pass
+// by simply never warning).
+const DRIFT_SWEEP = JSON.parse(JSON.stringify(ABSENT_SWEEP))
+DRIFT_SWEEP.repos[0].pr.headMatches = false
+DRIFT_SWEEP.repos[0].pr.state = 'open'
+control.queryResult = { data: DRIFT_SWEEP, error: null, isError: false, isFetching: false, isLoading: false, refetch: () => {} }
+const driftTree = chip.render()
+assert.ok(
+  nodes(driftTree).filter(n => n.__type === 'Codicon').map(n => String(n.props.name)).includes('warning'),
+  'a genuinely drifted PR must still render the warning icon'
+)
+// The CHIP's own warning is a SEPARATE element from the PR chip's, and the icon
+// assertion above cannot tell them apart — killing the chip's line alone left it
+// passing. Pin the chip's own contribution by its tooltip sentence, which only
+// the chip emits.
+assert.match(
+  String(find(driftTree, 'Tip').props.label),
+  /head has moved past this checkout/,
+  'the chip itself must state the drift, not just the PR chip'
+)
+control.queryResult = { data: SWEEP, error: null, isError: false, isFetching: false, isLoading: false, refetch: () => {} }
+control.setCwd('/home/hermes/projects/understudy')
+
 // ── column alignment: the regression the harness used to miss ────────────────
 
 // Two earlier versions of this table shipped broken, and the harness passed

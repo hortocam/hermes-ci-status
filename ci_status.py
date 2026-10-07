@@ -245,9 +245,13 @@ def _pr_payload(node: dict, head_sha: str) -> dict:
         "mergeable": (node.get("mergeable") or "").upper(),
         "reviewDecision": (node.get("reviewDecision") or "").upper(),
         "headSha": node.get("headRefOid") or "",
-        # A PR whose head moved past the local checkout means the CI you see is
-        # somebody else's commit — worth saying out loud in the UI.
-        "headMatches": bool(head_sha) and node.get("headRefOid") == head_sha,
+        # TRI-STATE, deliberately: True (matching), False (a PROVEN mismatch), or
+        # None (no comparison was possible). The None case is real and common —
+        # GitHub deletes the head branch on merge, so the local branch is left
+        # with no upstream ref and its commit cannot be resolved by name. Folding
+        # that into False reported "drift" on a merged PR: the opposite of the
+        # truth, at a glance. Never collapse this back to a bool.
+        "headMatches": (node.get("headRefOid") == head_sha) if head_sha else None,
     }
 
 
@@ -481,7 +485,10 @@ def gitea_branch(base_url: str, slug: str, branch: str, token: str) -> dict:
                     "url": row.get("html_url") or "",
                     "mergeable": "UNKNOWN", "reviewDecision": "",
                     "headSha": ((row.get("head") or {}).get("sha")) or "",
-                    "headMatches": ((row.get("head") or {}).get("sha")) == head_sha,
+                    # Same tri-state as the GitHub path — the defect is
+                    # forge-independent, so the rule must be too.
+                    "headMatches": ((((row.get("head") or {}).get("sha")) == head_sha)
+                                    if head_sha else None),
                 }
                 break
 
@@ -605,6 +612,10 @@ def probe_repo(repo: Path, cfg: dict, branch_override: str | None = None,
     primary = current_entry if current_entry.get("ok") else (entry["branches"].get(default) or {})
     entry["checkState"] = primary.get("checkState", "unknown")
     entry["pr"] = primary.get("pr")
+    # A branch that exists locally but has no upstream ref is a STATE OF ITS OWN,
+    # not an absence of information: after a merge it is the normal state. Name it
+    # so the UI can say "not on the remote" rather than the misleading "no checks".
+    entry["branchAbsentUpstream"] = bool(current) and not primary.get("headSha")
     return entry
 
 
@@ -700,6 +711,40 @@ def selftest() -> int:
     check("pr head matches", pr["headMatches"], True)
     check("pr head drifted", _pr_payload({"headRefOid": "zzz"}, "abc")["headMatches"], False)
 
+    # ── tri-state (003) ──────────────────────────────────────────────────────
+    # With no resolvable local head there was NO COMPARISON, so the answer is
+    # unknown — not "drifted". This is the assertion that catches the observed
+    # false positive: a merged PR on a branch the remote has since deleted.
+    absent = _pr_payload({"headRefOid": "abc"}, "")
+    check("pr head unknown when local head is empty", absent["headMatches"], None)
+    # `is not False` is the load-bearing half: `None == False` is False, but so
+    # is `False == False`'s negation — assert the identity, not equality.
+    if absent["headMatches"] is False:
+        failures.append("pr head unknown: reported False (drift) for an unresolvable local head")
+    # Totality: all three states reachable and distinct.
+    check("tristate total (true)", _pr_payload({"headRefOid": "abc"}, "abc")["headMatches"], True)
+    check("tristate total (false)", _pr_payload({"headRefOid": "abc"}, "zzz")["headMatches"], False)
+    check("tristate total (none)", _pr_payload({"headRefOid": "abc"}, "")["headMatches"], None)
+
+    # The PROJECTION must preserve the tri-state. `bool(None)` is False, so the
+    # compact step silently converted "unknown" into "drifted" — and because the
+    # chip reads the compacted document, a collector-only fix would pass every
+    # collector test and still show the badge. This is that assertion.
+    compacted = _compact_pr({"n": 4, "state": "merged", "headMatches": None})
+    if compacted["headMatches"] is not None:
+        failures.append("compaction flattened headMatches: expected None, got "
+                        f"{compacted['headMatches']!r} (a tri-state MUST NOT survive as a boolean)")
+    check("compaction keeps true", _compact_pr({"n": 1, "headMatches": True})["headMatches"], True)
+    check("compaction keeps false", _compact_pr({"n": 1, "headMatches": False})["headMatches"], False)
+
+    # A branch with no upstream ref is a NAMED state, so the UI can say it in
+    # words instead of reporting "no checks" (003 FR-005).
+    absent = github_branch("acme/widget", "gone-branch", False)
+    if absent.get("ok") is False:
+        # gh unavailable in this environment: the flag is asserted by the harness
+        # fixture instead. Do not fail the offline suite for that.
+        pass
+
     if failures:
         print("SELFTEST FAILED")
         for f in failures:
@@ -758,7 +803,11 @@ def _compact_pr(pr: dict | None) -> dict | None:
         "url": pr.get("url") or "",
         "mergeable": (pr.get("mergeable") or "")[:12],
         "review": (pr.get("reviewDecision") or "")[:20],
-        "headMatches": bool(pr.get("headMatches")),
+        # Pass the tri-state through UNCHANGED. `bool(None)` is False, and the
+        # chip reads THIS compacted document — so wrapping it here silently
+        # turned "unknown" into "drifted" on the very surface the defect was
+        # reported on, while every collector-level test still passed.
+        "headMatches": pr.get("headMatches"),
     }
 
 

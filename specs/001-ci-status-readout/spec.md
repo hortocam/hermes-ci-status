@@ -147,6 +147,10 @@ new value is used and survives.
   payload is cut, the UI states that plainly and tells the user how to narrow the watch list, rather
   than reporting a JSON syntax error.
 - **Detached HEAD.** The current branch renders as `(detached)` without failing the row.
+- **Branch absent upstream.** The remote head branch was deleted (most commonly on merge) while the
+  local branch remains. Its commit cannot be resolved by name, so the check state is absent and the PR
+  comparison is unknown. The row/expanded detail states this in words rather than reporting "no checks",
+  and **no drift indicator appears** — see FR-007.
 - **A repository with no CI configuration at all.** Distinguished from "pipeline exists but nothing has
   run", so the user does not read "no checks" as "not wired up".
 - **One repository raising an exception.** The sweep continues; the failing repo carries the error.
@@ -173,7 +177,12 @@ new value is used and survives.
 - **FR-006**: The system MUST classify every check set into exactly one of `success`, `failure`,
   `pending`, `neutral`, `none`, `unknown`, with **failure and pending taking precedence over success**.
 - **FR-007**: The system MUST detect a PR whose head has moved past the local checkout and report it as
-  `sha drift`.
+  `sha drift` — but **only when a mismatch is established**. When the local head cannot be resolved (the
+  branch exists locally with no upstream ref, which is the normal state after a merge that deleted the
+  head branch), the comparison is **unknown** and MUST NOT be reported as drift.
+  *(Refined by `003-absent-branch`: the original was incomplete rather than wrong — it said when to warn
+  and was silent on a head that cannot be resolved, and that silence is what the code filled with
+  `false`, reporting a merged PR as drifting.)*
 - **FR-008**: The system MUST report the PR's review decision and mergeability so the UI can badge
   `review` and `conflict`.
 - **FR-009**: The system MUST report a repository with no forge as *skipped* with a reason, never as a
@@ -227,7 +236,10 @@ new value is used and survives.
 - **Check context**: one check — name, type (job or legacy status), status, conclusion, and the URL to
   its run.
 - **Pull request**: number, state, draft flag, title, URL, mergeability, review decision, head SHA, and
-  whether that head matches the local checkout.
+  whether that head matches the local checkout — a **tri-state**: `true` (matching), `false` (a proven
+  mismatch), or `null` (no comparison was possible because the local head is unresolvable). `null` is a
+  distinct assertion that *no comparison happened*; it is not a softened `false`, which is why no drift
+  indicator may fire on it.
 - **Document**: the single JSON payload the collector emits — generation time, whether the GitHub CLI is
   ready, the repo entries, and errors.
 
