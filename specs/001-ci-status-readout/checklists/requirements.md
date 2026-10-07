@@ -12,6 +12,10 @@ satisfied *as a requirement*. It is not a claim that implementation work is comp
 - [x] CHK002 No `[NEEDS CLARIFICATION]` markers remain unresolved (the baseline is derived from shipped behaviour, so none are open)
 - [x] CHK003 Requirements describe WHAT and WHY, not HOW — framework names appear only under Constraints, where the constraint *is* the technology
 - [x] CHK004 The precedence rule ("failure and pending beat green") is stated explicitly (FR-006) rather than implied
+      → *Note (002-honest-ci-fallback): FR-013 has since been **superseded**. It required a fallback to the most
+      urgent repository; that fallback was removed because on a surface with no workspace it named a real
+      repository's CI where none was justified. FR-006's precedence rule is unaffected — it still governs
+      the RAG fold within a matched branch. See `002`'s §Amendment to 001.*
 - [x] CHK005 Each constraint that the CI actually enforces has a corresponding requirement (FR-021 no build, FR-022 stdlib-only, FR-024 read-only, FR-025 id contract)
 - [x] CHK006 Every success criterion is measurable or observable, with no unfalsifiable phrasing
 - [x] CHK007 Out-of-scope items are named (write actions, gating, non-git VCS, other forges, composer-deck surface)

@@ -42,8 +42,12 @@ different watched repository and confirm the chip re-points.
    sessions, **Then** the chip follows the newly focused session's workspace rather than remaining on
    the previous one.
 3. **Given** a focused session whose workspace belongs to no watched repository, **When** the sweep
-   completes, **Then** the chip falls back to the repository with the most urgent CI state and its
-   tooltip **says** that it is doing so.
+   completes, **Then** the chip names **no** repository, states in words that there is no repository
+   under this view, and remains clickable through to the CI page.
+   *(Superseded by `002-honest-ci-fallback`. The former behaviour — falling back to the most urgent CI
+   state and disclosing it — was removed: on a surface with no workspace the app leaves its `cwd` atom
+   on the last conversation, so the "fallback" named a real repository's CI where none was justified,
+   which at a glance is indistinguishable from a correct answer. See `002`'s §Amendment to 001.)*
 4. **Given** the collector cannot be reached, **When** the chip renders, **Then** it shows an explicit
    error affordance naming the reason, and clicking it opens the page — never a blank chip.
 
@@ -183,8 +187,11 @@ new value is used and survives.
 
 - **FR-012**: The system MUST present a status-bar chip showing the focused session's repository,
   branch, CI state and PR, and MUST follow the focused session when the user switches.
-- **FR-013**: When no watched repository matches the focused workspace, the chip MUST fall back to the
-  most urgent repository and MUST disclose the fallback in its tooltip.
+- **FR-013**: When no watched repository matches the focused workspace, the chip MUST name **no**
+  repository from the sweep — there is no "most urgent" (or any other) fallback — MUST state in words
+  that there is no repository under this view, and MUST remain visible and clickable through to the CI
+  page. *(Superseded by `002-honest-ci-fallback`, which removed the fallback this requirement used to
+  demand. The ordering rule lived in `mostUrgent`, deleted so it cannot be reinstated by accident.)*
 - **FR-014**: The system MUST present a full page listing every watched repository with columns for
   state, repository, branch, checks, pull request and forge host.
 - **FR-015**: The system MUST allow a row to be expanded to list each check by name, conclusion and run
@@ -251,7 +258,10 @@ new value is used and survives.
 - The app's `shell.exec` RPC remains the transport, with its 4000-character stdout ceiling.
 - The SDK's contribution areas used here exist and remain supported: `routes`, `sidebarNav`, `palette`,
   `statusBar.right`.
-- "Most urgent" ordering is failure → pending → success → neutral → none → unknown.
+- ~~"Most urgent" ordering is failure → pending → success → neutral → none → unknown.~~
+  **Removed by `002-honest-ci-fallback`** — the ordering no longer exists in the code. `mostUrgent` and
+  its rank table were deleted outright rather than left unused, because an unused helper is how a
+  removed heuristic returns as an obvious improvement.
 - Out of scope for this slice: any write action, any gating or blocking, non-git VCS, forges other than
   GitHub and Gitea, and a dedicated composer-deck surface (recorded separately; the SDK exposes no seam
   for it).

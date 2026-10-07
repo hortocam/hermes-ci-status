@@ -253,18 +253,6 @@ function repoForCwd(repos, cwd) {
   return best
 }
 
-/** Which repo deserves the chip when nothing matches the focused workspace:
- *  worst CI first, but only among repos that actually run checks. */
-function mostUrgent(repos) {
-  const rank = { failure: 0, pending: 1, success: 2, neutral: 3, none: 4, unknown: 5 }
-  return (
-    repos
-      .filter(r => r.hasCi)
-      .slice()
-      .sort((a, b) => (rank[a.state] ?? 9) - (rank[b.state] ?? 9))[0] || null
-  )
-}
-
 function countsLabel(entry) {
   const counts = (entry && entry.n) || {}
   const parts = []
@@ -392,9 +380,13 @@ function CiChip() {
   })
 
   const repos = visibleRepos(query.data)
-  const focused = repoForCwd(repos, cwd)
-  const fallback = useMemo(() => mostUrgent(repos), [repos])
-  const repo = focused || fallback
+  // ONLY a positive match. There is deliberately no "most urgent repo" fallback:
+  // on a surface with no workspace (the Kanban board, Artifacts, any full page)
+  // the app leaves its cwd atom on whatever the last chat used, so a guess here
+  // was indistinguishable from a real answer — it silently reported one
+  // project's CI while you looked at something else entirely. Saying nothing is
+  // the honest state when there is nothing true to say.
+  const repo = repoForCwd(repos, cwd)
 
   if (query.isLoading) {
     return jsx(Tip, {
@@ -424,7 +416,31 @@ function CiChip() {
   }
 
   if (!repo) {
-    return null
+    // A dimmed, inert chip rather than nothing at all: a disappearing chip reads
+    // as "the plugin broke", and this state is real information — there is no
+    // repo under what you are looking at.
+    return jsx(Tip, {
+      label: t('chipNoRepo'),
+      children: jsx('button', {
+        'aria-label': t('chipNoRepo'),
+        className: cn(
+          'inline-flex h-full items-center gap-1 px-1.5 text-[0.6875rem] transition-colors',
+          'text-(--ui-text-quaternary) hover:bg-(--chrome-action-hover) hover:text-(--ui-text-tertiary)'
+        ),
+        onClick: () => {
+          haptic('tap')
+          host.navigate(PAGE_PATH)
+        },
+        type: 'button',
+        children: jsxs('span', {
+          className: 'inline-flex items-center gap-1',
+          children: [
+            jsx(StatusDot, { tone: 'muted' }),
+            jsx('span', { children: 'CI' })
+          ]
+        })
+      })
+    })
   }
 
   const style = rag(repo.state)
@@ -433,8 +449,7 @@ function CiChip() {
   const label =
     `${repo.name} · ${repo.branch || '(detached)'}\n${style.label} — ${countsLabel(branchEntry || repo)}` +
     (repo.pr ? `\nPR #${repo.pr.n} ${prRag(repo.pr).label}` : '') +
-    (drifted ? '\nThis PR\'s head has moved past this checkout.' : '') +
-    (focused ? '' : '\nNo repo under this chat\'s workspace — showing the most urgent one.')
+    (drifted ? '\nThis PR\'s head has moved past this checkout.' : '')
 
   return jsx(Tip, {
     label,
@@ -446,7 +461,8 @@ function CiChip() {
       ),
       onClick: () => {
         haptic('tap')
-        $expanded.set(focused ? repo.path : null)
+        // Expand the row this chip describes — we only get here on a match.
+        $expanded.set(repo.path)
         host.navigate(PAGE_PATH)
       },
       type: 'button',
@@ -925,6 +941,9 @@ export default {
         errorBody: 'The collector did not answer. Check the command under the gear, then refresh.',
         chipLoading: 'Reading CI status…',
         chipError: 'CI status unavailable.',
+        chipNoRepo:
+          'No repository under this view. CI follows the workspace of the chat you are in, so open ' +
+          'a chat that works in a repo — or click through to the CI page.',
         chipAria: name => `CI status for ${name} — open the CI page`
       }
     })
