@@ -518,9 +518,14 @@ function RepoChecks({ root }) {
   const contexts = (branch && branch.contexts) || []
 
   if (!contexts.length) {
+    // Order matters: a branch that is not on the remote and a repo with no
+    // pipeline both produce an empty check list, and "no checks" describes
+    // neither. The most specific true statement wins.
     const note =
       (branch && branch.error && `Collector error: ${branch.error}`) ||
-      (branch && branch.noPipeline && 'No CI pipeline is configured for this repository.') ||
+      (repo.branchAbsentUpstream &&
+        t('branchAbsent', repo.currentBranch || '(detached)')) ||
+      (branch && branch.noPipeline && t('noPipeline')) ||
       countsLabel(branch || repo)
     return jsx('div', { className: 'px-3 py-2 text-[0.7rem] text-(--ui-text-tertiary)', children: note })
   }
@@ -941,6 +946,10 @@ export default {
         errorBody: 'The collector did not answer. Check the command under the gear, then refresh.',
         chipLoading: 'Reading CI status…',
         chipError: 'CI status unavailable.',
+        branchAbsent: branch =>
+          `Branch '${branch}' is not on the remote (deleted after a merge, most likely), so its ` +
+          'checks cannot be read. Switch to the default branch to see its CI.',
+        noPipeline: 'No CI pipeline is configured for this repository.',
         chipNoRepo:
           'No repository under this view. CI follows the workspace of the chat you are in, so open ' +
           'a chat that works in a repo — or click through to the CI page.',

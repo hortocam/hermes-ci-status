@@ -268,6 +268,11 @@ reach-in, and it would break on the next markup change.
   a fallback named a real repository's CI where nothing justified it, and at a
   glance that is indistinguishable from a correct answer. A status readout that
   can be confidently wrong is worse than one that abstains.
+- **A branch with no upstream ref reads as absent, not as drift.** GitHub deletes the head branch on
+  merge, so a local branch whose PR just landed is the *normal* case of "exists locally, gone upstream".
+  The collector resolves a branch's commit by name, which then yields nothing — and the check comparison
+  is reported as **unknown**, not as a mismatch. Reporting it as drift told you the opposite of the truth
+  at a glance, so the sha-drift badge fires only on a **proven** mismatch.
 - **The collector polls forges on a timer.** The sweep refetches every 30s while
   a surface is mounted, and React Query dedupes the chip and the page into one
   call. Each repo costs a couple of forge round-trips per sweep.
