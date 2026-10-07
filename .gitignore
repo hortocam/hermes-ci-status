@@ -1,2 +1,5 @@
 # Ignored so a stray local run of the harness never gets committed.
 test/.scratch/
+
+# Kanban worker worktrees (live checkouts — a broad `git add -A` must never sweep them in)
+.worktrees
