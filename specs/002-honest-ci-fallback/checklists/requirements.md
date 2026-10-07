@@ -61,6 +61,14 @@ implementation is complete. An author ticking their own checklist is a self-repo
       there rather than be wrong; it does not give the board a workspace, and the spec's Assumptions and
       Out of Scope say so plainly.
 
+## Post-implementation confirmation
+
+- [x] CHK022 The negative controls were run, not merely written: reinstating the most-urgent fallback
+      fails SC-001's assertion; rendering `null` fails SC-002's; calling the deleted helper fails to
+      load. Recorded in the PR.
+- [x] CHK023 `001`'s artefacts were corrected in the same change (FR-013, US1#3, the assumption, T023,
+      CHK004), so no artefact describes behaviour the code does not have.
+
 ## Notes
 
 - CHK020–CHK021 are deliberately unchecked: they are adjacent problems this change does not solve. A

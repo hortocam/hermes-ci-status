@@ -170,26 +170,46 @@ emitGatewayEvent('session.info', {
 control.setCwd('/home/hermes/projects/understudy')
 
 control.setFocusedSession('sess-soundscape')
-assert.match(text(nodes(chip.render())), /soundscape-factory/, 'chip follows the focused session to soundscape-factory')
+assert.match(text(chip.render()), /soundscape-factory/, 'chip follows the focused session to soundscape-factory')
 
 control.setFocusedSession('sess-understudy')
-assert.match(text(nodes(chip.render())), /understudy/, 'chip follows the focused session back to understudy')
+assert.match(text(chip.render()), /understudy/, 'chip follows the focused session back to understudy')
 
 // A session the plugin has not heard from must fall back to the app's cwd
 // rather than keep the last one it knew.
 control.setFocusedSession('sess-unknown')
-const unknownTree = text(nodes(chip.render()))
+const unknownTree = text(chip.render())
 assert.match(unknownTree, /understudy/, 'an unheard-of session falls back to the app cwd atom')
 
 control.setFocusedSession(null)
 control.setCwd('/home/hermes/projects/understudy')
 
-// A workspace on no watched repo falls back to the most urgent, and says so.
+// NO WORKSPACE — the honest state. Regression: the chip used to guess the
+// "most urgent" repo here, which on a full page (Kanban, Artifacts) silently
+// reported one project's CI while the user looked at something else. There is
+// deliberately no fallback: an unmatched workspace must name NO repo.
 control.setCwd('/tmp/nowhere')
-const fbTree = nodes(chip.render())
-assert.match(text(fbTree), /soundscape-factory/, 'falls back to the most urgent failing repo')
-assert.match(String(find(fbTree, 'Tip').props.label), /No repo under this chat/, 'the fallback is disclosed')
+const noWsTree = chip.render()
+const noWsText = text(noWsTree)
+for (const repo of SWEEP.repos) {
+  assert.ok(
+    !noWsText.includes(repo.name),
+    `no-workspace chip must not name "${repo.name}" (it has no workspace to justify it)`
+  )
+}
+assert.match(noWsText, /CI/, 'the no-workspace chip still identifies itself')
+assert.match(
+  String(find(noWsTree, 'Tip').props.label),
+  /No repository under this view/,
+  'the no-workspace chip explains why'
+)
+// It must still be a link into the page, not a dead dot.
+assert.equal(typeof find(noWsTree, 'button').props.onClick, 'function', 'the no-workspace chip is still clickable')
+assert.deepEqual(control.calls.navigate, [], 'rendering the chip must not navigate')
 control.setCwd('/home/hermes/projects/understudy')
+
+// And a real workspace still resolves, so the honest state did not over-reach.
+assert.match(text(chip.render()), /understudy/, 'a matched workspace still shows its repo')
 
 // A collector failure must surface its reason, not a dead chip.
 control.queryResult = { data: undefined, error: new Error('collector exploded'), isError: true, isFetching: false, isLoading: false, refetch: () => {} }
@@ -231,7 +251,7 @@ assert.ok(tones.includes('bad'), 'a failing repo renders a bad dot')
 // ── one row rendered in full ─────────────────────────────────────────────────
 
 // Collapsed, so CiRow rendered its header only — assert on what it emitted.
-const collapsedRowText = text(nodes(route.render()))
+const collapsedRowText = text(route.render())
 assert.match(collapsedRowText, /understudy/, 'the focused repo has a row')
 assert.match(String(SWEEP.repos[0].pr.url), /pull\/18$/, 'the fixture PR URL is wired through')
 

@@ -45,6 +45,13 @@ harness gaps** that form the next slice.
 - [x] T021 [US1] `shell.exec` transport helper: command assembly, JSON parse, truncation explained in words
 - [x] T022 [US1] Loading / error chip states (never blank)
 - [x] T023 [US1] Fallback to most-urgent repo, **disclosed** in the tooltip
+      → **AMENDED by `002-honest-ci-fallback`: the fallback was specified deliberately, implemented, then
+      removed as harmful.** It was not a coding error but a wrong requirement: on a surface with no
+      workspace (the Kanban board, any full page) the app leaves its `cwd` atom on the last conversation,
+      so the fallback named a real repository's CI where nothing justified it — indistinguishable at a
+      glance from a correct answer. `mostUrgent` and its rank table are deleted, and the abstention that
+      replaces them is covered by negative-controlled assertions. Recorded here rather than removed, so
+      the history reads as honest as the three defect cycles above it.
 - [x] T024 [US1] **Defect fix** — chip follows the focused session via `session.info`, keyed by session id (was frozen on the previous session)
 - [x] T025 [US1] 30s poll, deduped into one collector call with the page via a shared query key
 

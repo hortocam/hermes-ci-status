@@ -258,9 +258,16 @@ reach-in, and it would break on the next markup change.
 
 ## Caveats
 
-- **The chip follows the focused session's workspace.** It matches `cwd` against
-  the watched repo roots; on a workspace belonging to no watched repo it falls
-  back to the repo with the most urgent CI and *says* that it is doing so.
+- **The chip follows the focused session's workspace.** It matches the focused
+  chat's `cwd` against the watched repo roots and names that repository.
+- **On a surface with no workspace the chip abstains.** The Kanban board,
+  Artifacts and any full page have no workspace, so the chip names no repository
+  and says so plainly — still clickable through to the CI page, which lists
+  everything. There is deliberately **no** "most urgent repo" fallback: the app
+  leaves its `cwd` atom on the last conversation when a page has no workspace, so
+  a fallback named a real repository's CI where nothing justified it, and at a
+  glance that is indistinguishable from a correct answer. A status readout that
+  can be confidently wrong is worse than one that abstains.
 - **The collector polls forges on a timer.** The sweep refetches every 30s while
   a surface is mounted, and React Query dedupes the chip and the page into one
   call. Each repo costs a couple of forge round-trips per sweep.
